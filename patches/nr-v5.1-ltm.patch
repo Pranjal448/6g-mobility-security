@@ -1,0 +1,434 @@
+diff --git a/examples/CMakeLists.txt b/examples/CMakeLists.txt
+index f5984dd..5956b38 100644
+--- a/examples/CMakeLists.txt
++++ b/examples/CMakeLists.txt
+@@ -24,6 +24,7 @@ set(base_examples
+     cttc-nr-simple-qos-sched
+     cttc-nr-multi-flow-qos-sched
+     gsoc-nr-channel-models
++    ltm-forged-handover
+ )
+ foreach(
+   example
+diff --git a/model/nr-control-messages.cc b/model/nr-control-messages.cc
+index a3a60ba..351a890 100644
+--- a/model/nr-control-messages.cc
++++ b/model/nr-control-messages.cc
+@@ -194,6 +194,61 @@ NrMibMessage::NrMibMessage()
+     SetMessageType(NrControlMessage::MIB);
+ }
+ 
++// ----------------------------------------------------------------------------------------
++
++NrLtmCellSwitchMessage::NrLtmCellSwitchMessage()
++{
++    SetMessageType(NrControlMessage::LTM_CELL_SWITCH);
++}
++
++void
++NrLtmCellSwitchMessage::SetRnti(uint16_t rnti)
++{
++    m_rnti = rnti;
++}
++
++uint16_t
++NrLtmCellSwitchMessage::GetRnti() const
++{
++    return m_rnti;
++}
++
++void
++NrLtmCellSwitchMessage::SetTargetCellId(uint16_t cellId)
++{
++    m_targetCellId = cellId;
++}
++
++uint16_t
++NrLtmCellSwitchMessage::GetTargetCellId() const
++{
++    return m_targetCellId;
++}
++
++void
++NrLtmCellSwitchMessage::SetTargetConfigId(uint16_t id)
++{
++    m_targetConfigId = id;
++}
++
++uint16_t
++NrLtmCellSwitchMessage::GetTargetConfigId() const
++{
++    return m_targetConfigId;
++}
++
++void
++NrLtmCellSwitchMessage::SetForged(bool forged)
++{
++    m_forged = forged;
++}
++
++bool
++NrLtmCellSwitchMessage::GetForged() const
++{
++    return m_forged;
++}
++
+ void
+ NrMibMessage::SetMib(NrRrcSap::MasterInformationBlock mib)
+ {
+diff --git a/model/nr-control-messages.h b/model/nr-control-messages.h
+index fd201c8..ad5e2f7 100644
+--- a/model/nr-control-messages.h
++++ b/model/nr-control-messages.h
+@@ -55,6 +55,7 @@ class NR_EXPORT NrControlMessage : public SimpleRefCount<NrControlMessage>
+         DL_HARQ,       //!< DL HARQ feedback
+         SR,            //!< Scheduling Request: asking for space
+         SRS,           //!< SRS
++        LTM_CELL_SWITCH, //!< 6G LTM lower-layer-triggered cell-switch command (MAC CE, below PDCP)
+     };
+ 
+     /**
+@@ -337,6 +338,41 @@ class NR_EXPORT NrMibMessage : public NrControlMessage
+ 
+ // ---------------------------------------------------------------------------
+ 
++/**
++ * @ingroup utils
++ * @brief 6G LTM (Lower-layer Triggered Mobility) cell-switch command, modelled as an
++ *        unauthenticated Layer-2 MAC Control Element carried on the DL control channel.
++ *
++ * In 5G-Advanced / 6G LTM the serving cell issues the cell-switch trigger as a MAC CE that
++ * sits below PDCP, so it carries NO integrity protection and NO ciphering (unlike an
++ * RRC-commanded handover). The UE applies a pre-configured candidate target identified by a
++ * Target Configuration ID. Because the command is unauthenticated it can be forged by a
++ * symbol-synchronised overshadowing SDR (the attack modelled in this work): this same message
++ * class is what a legitimate gNB emits and what the attacker injects at the victim UE PHY.
++ */
++class NR_EXPORT NrLtmCellSwitchMessage : public NrControlMessage
++{
++  public:
++    NrLtmCellSwitchMessage();
++
++    void SetRnti(uint16_t rnti);          //!< target UE (unicast)
++    uint16_t GetRnti() const;
++    void SetTargetCellId(uint16_t cellId); //!< candidate target cell to switch to
++    uint16_t GetTargetCellId() const;
++    void SetTargetConfigId(uint16_t id);   //!< Target Configuration ID (the spoofable field)
++    uint16_t GetTargetConfigId() const;
++    void SetForged(bool forged);           //!< true if injected by the attacker (for tracing only)
++    bool GetForged() const;
++
++  private:
++    uint16_t m_rnti{0};
++    uint16_t m_targetCellId{0};
++    uint16_t m_targetConfigId{0};
++    bool m_forged{false};
++};
++
++// ---------------------------------------------------------------------------
++
+ /**
+  * @ingroup utils
+  * @brief Abstract model for broadcasting the System Information Block Type 1
+diff --git a/model/nr-gnb-phy.cc b/model/nr-gnb-phy.cc
+index b54c921..b6ba1dd 100644
+--- a/model/nr-gnb-phy.cc
++++ b/model/nr-gnb-phy.cc
+@@ -667,6 +667,24 @@ NrGnbPhy::GetTxPower() const
+     return m_txPower;
+ }
+ 
++void
++NrGnbPhy::SendLtmCellSwitch(uint16_t rnti, uint16_t targetCellId, uint16_t targetConfigId)
++{
++    NS_LOG_FUNCTION(this << rnti << targetCellId << targetConfigId);
++    // Build the LTM cell-switch MAC CE and enqueue it on the DL control channel with no extra
++    // latency (the lower-layer-triggered design point). It rides the air interface below PDCP,
++    // unauthenticated -- the very property the overshadowing attacker exploits.
++    Ptr<NrLtmCellSwitchMessage> msg = Create<NrLtmCellSwitchMessage>();
++    // Stamp the source BWP ARFCN: over-the-air control messages are routed at the UE by their
++    // source ARFCN (NrUeNetDevice::RouteIngoingCtrlMsgs aborts on arfcn==0).
++    msg->SetSourceBwpArfcn(DoGetArfcn());
++    msg->SetRnti(rnti);
++    msg->SetTargetCellId(targetCellId);
++    msg->SetTargetConfigId(targetConfigId);
++    msg->SetForged(false);
++    EnqueueCtrlMsgNow(msg);
++}
++
+ void
+ NrGnbPhy::SetSubChannels(const std::vector<int>& rbIndexVector, size_t nTotalAllocRbs)
+ {
+diff --git a/model/nr-gnb-phy.h b/model/nr-gnb-phy.h
+index b08447c..9296d56 100644
+--- a/model/nr-gnb-phy.h
++++ b/model/nr-gnb-phy.h
+@@ -218,6 +218,16 @@ class NR_EXPORT NrGnbPhy : public NrPhy
+      */
+     void SetTxPower(double pow);
+ 
++    /**
++     * @brief Emit a 6G LTM cell-switch command (unauthenticated MAC CE) to a UE on the DL
++     *        control channel. Models the serving gNB issuing the lower-layer-triggered
++     *        cell-switch trigger. Enqueued with no extra latency (the LTM design point).
++     * @param rnti target UE RNTI (unicast)
++     * @param targetCellId candidate target cell to switch to
++     * @param targetConfigId Target Configuration ID carried by the command
++     */
++    void SendLtmCellSwitch(uint16_t rnti, uint16_t targetCellId, uint16_t targetConfigId);
++
+     /**
+      * @brief Retrieve the TX power of the gNB
+      *
+diff --git a/model/nr-ue-cphy-sap.h b/model/nr-ue-cphy-sap.h
+index 5ba0faa..9aeea2e 100644
+--- a/model/nr-ue-cphy-sap.h
++++ b/model/nr-ue-cphy-sap.h
+@@ -262,6 +262,17 @@ class NR_EXPORT NrUeCphySapUser
+                                                  uint32_t arfcn,
+                                                  NrRrcSap::SystemInformationBlockType1 sib1) = 0;
+ 
++    /**
++     * @brief Relay a 6G LTM cell-switch command (an unauthenticated Layer-2 MAC CE) from the
++     *        PHY to the RRC. Called when the UE PHY receives an NrLtmCellSwitchMessage addressed
++     *        to it -- either legitimately from the serving gNB, or forged by an overshadowing
++     *        attacker (forged==true; used for tracing only, the UE cannot tell the difference).
++     * @param targetCellId the cell the UE is commanded to switch to
++     * @param targetConfigId the Target Configuration ID carried by the command
++     * @param forged whether this command was injected by the attacker (tracing only)
++     */
++    virtual void RecvLtmCellSwitch(uint16_t targetCellId, uint16_t targetConfigId, bool forged) = 0;
++
+     /**
+      * @brief Send a report of RSRP and RSRQ values perceived from PSS by the PHY
+      *        entity (after applying layer-1 filtering) to the RRC layer.
+@@ -542,6 +553,7 @@ class MemberNrUeCphySapUser : public NrUeCphySapUser
+     void RecvSystemInformationBlockType1(uint16_t cellId,
+                                          uint32_t arfcn,
+                                          NrRrcSap::SystemInformationBlockType1 sib1) override;
++    void RecvLtmCellSwitch(uint16_t targetCellId, uint16_t targetConfigId, bool forged) override;
+     void ReportUeMeasurements(NrUeCphySapUser::UeMeasurementsParameters params) override;
+     void NotifyOutOfSync() override;
+     void NotifyInSync() override;
+@@ -566,6 +578,15 @@ MemberNrUeCphySapUser<C>::RecvMasterInformationBlock(uint16_t cellId,
+     m_owner->DoRecvMasterInformationBlock(cellId, arfcn, mib);
+ }
+ 
++template <class C>
++void
++MemberNrUeCphySapUser<C>::RecvLtmCellSwitch(uint16_t targetCellId,
++                                            uint16_t targetConfigId,
++                                            bool forged)
++{
++    m_owner->DoRecvLtmCellSwitch(targetCellId, targetConfigId, forged);
++}
++
+ template <class C>
+ void
+ MemberNrUeCphySapUser<C>::RecvSystemInformationBlockType1(
+diff --git a/model/nr-ue-phy.cc b/model/nr-ue-phy.cc
+index d1a8e89..e4f12f1 100644
+--- a/model/nr-ue-phy.cc
++++ b/model/nr-ue-phy.cc
+@@ -713,6 +713,21 @@ NrUePhy::PhyCtrlMessagesReceived(const Ptr<NrControlMessage>& msg)
+ 
+         ProcessRar(rarMsg);
+     }
++    else if (msg->GetMessageType() == NrControlMessage::LTM_CELL_SWITCH)
++    {
++        // 6G LTM cell-switch MAC CE received on the DL control channel. Unicast: act only if it
++        // addresses this UE's RNTI. The UE cannot authenticate it (below PDCP, no MAC-I), so a
++        // forged (overshadowed) command is processed exactly like a legitimate one -- relay it
++        // up to the RRC, which applies the pre-configured target identified by the command.
++        Ptr<NrLtmCellSwitchMessage> ltm = DynamicCast<NrLtmCellSwitchMessage>(msg);
++        m_phyRxedCtrlMsgsTrace(m_currentSlot, GetCellId(), m_rnti, GetBwpId(), msg);
++        if (ltm->GetRnti() == m_rnti)
++        {
++            m_ueCphySapUser->RecvLtmCellSwitch(ltm->GetTargetCellId(),
++                                               ltm->GetTargetConfigId(),
++                                               ltm->GetForged());
++        }
++    }
+     else
+     {
+         NS_LOG_INFO("Message type not recognized " << msg->GetMessageType());
+@@ -721,6 +736,23 @@ NrUePhy::PhyCtrlMessagesReceived(const Ptr<NrControlMessage>& msg)
+     }
+ }
+ 
++void
++NrUePhy::InjectForgedLtmCellSwitch(uint16_t targetCellId, uint16_t targetConfigId)
++{
++    NS_LOG_FUNCTION(this << targetCellId << targetConfigId);
++    // Model the overshadowing attacker's capture-effect injection: a forged LTM cell-switch MAC
++    // CE is delivered to this UE's PHY as if received from the air. The UE has no way to
++    // authenticate it (below PDCP, no MAC-I), so it flows through the ordinary DL-control
++    // receive path and the UE acts on the attacker's spoofed Target Configuration ID.
++    Ptr<NrLtmCellSwitchMessage> msg = Create<NrLtmCellSwitchMessage>();
++    msg->SetSourceBwpArfcn(DoGetArfcn()); // the victim's serving BWP (overshadow is in-band)
++    msg->SetRnti(m_rnti);
++    msg->SetTargetCellId(targetCellId);
++    msg->SetTargetConfigId(targetConfigId);
++    msg->SetForged(true);
++    PhyCtrlMessagesReceived(msg);
++}
++
+ void
+ NrUePhy::ProcessRar(const Ptr<NrRarMessage>& rarMsg)
+ {
+diff --git a/model/nr-ue-phy.h b/model/nr-ue-phy.h
+index 0086172..5e9f7dc 100644
+--- a/model/nr-ue-phy.h
++++ b/model/nr-ue-phy.h
+@@ -278,6 +278,16 @@ class NR_EXPORT NrUePhy : public NrPhy
+      */
+     void PhyCtrlMessagesReceived(const Ptr<NrControlMessage>& msg);
+ 
++    /**
++     * @brief Inject a FORGED LTM cell-switch command directly at this UE's PHY, modelling an
++     *        overshadowing attacker's capture-effect injection of a spoofed MAC CE. The UE
++     *        processes it through the normal DL-control path (it cannot authenticate it), so a
++     *        successful capture makes the UE act on the attacker's Target Configuration ID.
++     * @param targetCellId spoofed target cell
++     * @param targetConfigId spoofed Target Configuration ID
++     */
++    void InjectForgedLtmCellSwitch(uint16_t targetCellId, uint16_t targetConfigId);
++
+     /**
+      * @brief Receive a PHY data packet
+      *
+diff --git a/model/nr-ue-rrc.cc b/model/nr-ue-rrc.cc
+index 58e4047..9f340aa 100644
+--- a/model/nr-ue-rrc.cc
++++ b/model/nr-ue-rrc.cc
+@@ -432,6 +432,11 @@ NrUeRrc::GetTypeId()
+                             "trace fired upon start of a handover procedure",
+                             MakeTraceSourceAccessor(&NrUeRrc::m_handoverStartTrace),
+                             "ns3::NrUeRrc::MibSibHandoverTracedCallback")
++            .AddTraceSource("LtmCellSwitchReceived",
++                            "trace fired when the UE acts on an LTM cell-switch MAC CE "
++                            "(legitimate or forged)",
++                            MakeTraceSourceAccessor(&NrUeRrc::m_ltmCellSwitchReceivedTrace),
++                            "ns3::NrUeRrc::LtmCellSwitchTracedCallback")
+             .AddTraceSource("HandoverEndOk",
+                             "trace fired upon successful termination of a handover procedure",
+                             MakeTraceSourceAccessor(&NrUeRrc::m_handoverEndOkTrace),
+@@ -1162,6 +1167,40 @@ NrUeRrc::DoConnect()
+ 
+ // CPHY SAP methods
+ 
++void
++NrUeRrc::AddLtmCandidate(uint16_t configId, uint16_t cellId)
++{
++    // Pre-configuration: store a candidate the serving cell provisioned in advance. The UE keeps
++    // these ready so a later cell-switch MAC CE can ACTIVATE one by its Target Configuration ID.
++    m_ltmCandidates[configId] = cellId;
++    NS_LOG_INFO("UE imsi=" << m_imsi << " pre-configured LTM candidate configId=" << configId
++                           << " -> cell " << cellId);
++}
++
++void
++NrUeRrc::DoRecvLtmCellSwitch(uint16_t targetCellId, uint16_t targetConfigId, bool forged)
++{
++    // 6G LTM lower-layer-triggered cell switch. The command arrived as an unauthenticated Layer-2
++    // MAC CE on the DL control channel; the UE cannot distinguish a legitimate command from a
++    // forged (overshadowed) one -- it acts on both (the vulnerability). In LTM the UE does NOT
++    // perform a fresh handover: it looks up the Target Configuration ID among the candidates the
++    // network pre-configured, and ACTIVATES that pre-provisioned candidate. A config ID with no
++    // matching pre-configured candidate -- exactly what a forged/spoofed Target Configuration ID
++    // carries -- cannot be activated: the UE has nothing valid to switch to.
++    NS_LOG_FUNCTION(this << targetCellId << targetConfigId << forged);
++    auto it = m_ltmCandidates.find(targetConfigId);
++    bool validCandidate = (it != m_ltmCandidates.end());
++    uint16_t candidateCell = validCandidate ? it->second : targetCellId;
++    NS_LOG_INFO("UE rnti=" << m_rnti << " cell=" << m_cellId
++                           << " LTM cell-switch: configId=" << targetConfigId
++                           << (validCandidate ? " ACTIVATES pre-configured candidate cell "
++                                              : " has NO pre-configured candidate (cell ")
++                           << candidateCell << (validCandidate ? "" : ")")
++                           << (forged ? " [FORGED]" : ""));
++    m_ltmCellSwitchReceivedTrace(m_imsi, m_cellId, m_rnti, candidateCell, targetConfigId, forged,
++                                 validCandidate);
++}
++
+ void
+ NrUeRrc::DoRecvMasterInformationBlock(uint16_t cellId,
+                                       uint32_t arfcn,
+diff --git a/model/nr-ue-rrc.h b/model/nr-ue-rrc.h
+index 166e6dd..d627a81 100644
+--- a/model/nr-ue-rrc.h
++++ b/model/nr-ue-rrc.h
+@@ -291,6 +291,14 @@ class NR_EXPORT NrUeRrc : public Object
+      */
+     uint16_t GetCellId() const;
+ 
++    /**
++     * Pre-configure an LTM candidate target at this UE, modelling the candidate configuration the
++     * serving cell delivers in advance over RRC. A later cell-switch MAC CE activates a candidate
++     * by its Target Configuration ID; an id with no candidate here cannot be activated.
++     * @param configId Target Configuration ID; @param cellId the candidate target cell it selects.
++     */
++    void AddLtmCandidate(uint16_t configId, uint16_t cellId);
++
+     /**
+      * @param cellId cell identifier
+      * @return true if cellId is the serving cell for this UE
+@@ -445,6 +453,20 @@ class NR_EXPORT NrUeRrc : public Object
+      */
+     typedef void (*ImsiCidRntiTracedCallback)(uint64_t imsi, uint16_t cellId, uint16_t rnti);
+ 
++    /**
++     * TracedCallback signature for the LTM cell-switch command receipt.
++     * @param imsi UE IMSI, @param cellId serving cell, @param rnti UE RNTI,
++     * @param targetCellId commanded target, @param targetConfigId Target Configuration ID,
++     * @param forged true if injected by the attacker.
++     */
++    typedef void (*LtmCellSwitchTracedCallback)(uint64_t imsi,
++                                                uint16_t cellId,
++                                                uint16_t rnti,
++                                                uint16_t targetCellId,
++                                                uint16_t targetConfigId,
++                                                bool forged,
++                                                bool validCandidate);
++
+     /**
+      * TracedCallback signature for MIBReceived, Sib1Received and
+      * HandoverStart events.
+@@ -614,6 +636,14 @@ class NR_EXPORT NrUeRrc : public Object
+     void DoRecvSystemInformationBlockType1(uint16_t cellId,
+                                            uint32_t arfcn,
+                                            NrRrcSap::SystemInformationBlockType1 msg);
++    /**
++     * Receive a 6G LTM cell-switch command (unauthenticated MAC CE) relayed from the PHY.
++     * Legitimate or forged; the UE acts on it identically (that is the vulnerability).
++     * @param targetCellId cell to switch to
++     * @param targetConfigId Target Configuration ID carried by the command
++     * @param forged whether the attacker injected it (tracing only)
++     */
++    void DoRecvLtmCellSwitch(uint16_t targetCellId, uint16_t targetConfigId, bool forged);
+     /**
+      * Report UE measurements function
+      *
+@@ -1128,6 +1158,22 @@ class NR_EXPORT NrUeRrc : public Object
+      * procedure. Exporting IMSI, source cell ID, RNTI, and target cell ID.
+      */
+     TracedCallback<uint64_t, uint16_t, uint16_t, uint16_t> m_handoverStartTrace;
++    /**
++     * The `LtmCellSwitchReceived` trace source. Fired when the UE acts on an LTM cell-switch
++     * MAC CE (legitimate or forged). Exposes imsi, cellId, rnti, targetCellId, targetConfigId,
++     * forged.
++     */
++    TracedCallback<uint64_t, uint16_t, uint16_t, uint16_t, uint16_t, bool, bool>
++        m_ltmCellSwitchReceivedTrace;
++    /**
++     * LTM candidate pre-configuration: Target Configuration ID -> candidate target cell.
++     * In real 6G LTM the serving cell delivers these candidate configurations to the UE IN
++     * ADVANCE (over RRC), and the UE pre-parses them; the cell-switch MAC CE then merely
++     * ACTIVATES the candidate named by its Target Configuration ID. A MAC CE whose config ID is
++     * NOT in this map has no valid candidate to activate -- exactly what a forged/spoofed Target
++     * Configuration ID produces.
++     */
++    std::map<uint16_t, uint16_t> m_ltmCandidates;
+     /**
+      * The `HandoverEndOk` trace source. Fired upon successful termination of a
+      * handover procedure. Exporting IMSI, cell ID, and RNTI.

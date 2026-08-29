@@ -1,0 +1,19 @@
+# secrets — never commit
+password.txt
+*.secret
+
+# ns-3 build tree / artifacts (this repo carries only our changes as a patch)
+ns-3-dev/
+build/
+cmake-cache/
+*.o
+*.so
+
+# python venv & caches
+venv/
+__pycache__/
+*.pyc
+
+# scratch
+scratch_logs/
+*.log

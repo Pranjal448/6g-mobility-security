@@ -1,0 +1,410 @@
+=== mtp/changes.txt ===
+High-level change log for the ns-3 6G LTM forged-handover ATTACK MODEL implementation.
+Append one entry per completed plan step: date/time, step number, one-paragraph summary of what was built/changed, and any deviation from the plan or thesis spec.
+Do NOT put secrets (e.g. sudo password) in this file.
+
+------------------------------------------------------------
+
+[2026-08-27] PLAN CREATED — PLAN.md
+Wrote /run/media/pranjal/hdd/mtp/PLAN.md: an 18-step numbered implementation plan (>=15
+required) covering toolchain/env setup; cloning+building ns-3+nr and verifying a stock nr
+example; urban-grid multi-cell scenario design (configurable cells/UEs/speed); LTM-style fast
+MAC-triggered handover proxy and its near-zero baseline interruption validation; RLF/RRC
+re-establishment tracing and mobility-interruption-time measurement; link-tier
+margin->P(forge-decode) lookup table (spec §6); attacker forged-switch injection driven by
+that table; per-bearer throughput/packet-loss; ping-pong/short-time-of-stay detection; a
+one-factor-at-a-time Python sweep harness (>=100 seeds/point target, reduction permitted and
+to be documented); mean +/- 95% CI aggregation tables mirroring the spec; plots; full
+validation vs §8 sanity shape; README documenting the two modelling boundaries; and cleanup.
+PLAN.md also records the two modelling boundaries (B1: NR+fast MAC handover proxies LTM; B2:
+RF capture enters only as a per-attempt success probability) and a deviations log.
+Deviation from spec: targeting ns-3.48 + 5G-LENA nr v5.1 (latest matched pair per nr README)
+rather than the spec's example "ns-3.40+", because the host toolchain (g++ 15.2, cmake 4.2,
+Python 3.14) is far newer than ns-3.40 supports. Spec says "recent release, e.g. ns-3.40+",
+so this is within spec. Seed count decision deferred to the sweep step pending measured
+single-run wall-clock, as the spec permits.
+
+[2026-08-27] STEP 1 DONE — toolchain + ns-3.48/nr-v5.1 built and verified
+Environment: Ubuntu 26.04, 8 cores / 14 GB RAM, 838 GB free on the mtp HDD. Installed apt
+build deps (build-essential, cmake 4.2, ninja-build, g++ 15.2, python3.14/-dev, pkg-config,
+libc6-dev, sqlite3 + libsqlite3-dev, libeigen3-dev, libgsl-dev, ccache). Created a Python
+venv at mtp/venv with numpy 2.5.2, pandas 3.0.5, matplotlib 3.11.1, scipy 1.18.1 for later
+sweep orchestration/aggregation/plotting. Cloned ns-3-dev @ tag ns-3.48 into mtp/ns-3-dev and
+5G-LENA nr @ tag v5.1 into mtp/ns-3-dev/contrib/nr. Configured with
+`./ns3 configure --enable-examples --enable-tests -d optimized`: nr appears in the built-
+modules list, SQLite and Eigen3 support both ON. Built the nr library (libns3.48-nr-
+optimized.so) plus the cttc-nr-demo example (693/693 targets, exit 0). Verified end-to-end by
+running `./ns3 run "cttc-nr-demo --simTime=1.0"`: it completed cleanly (exit 0) and produced
+real FlowMonitor output (Flow 1 ~10.24 Mbps, Flow 2 ~102.23 Mbps, sub-ms delays), confirming
+the NR stack + channel model + traffic run correctly. Recon for later steps: nr exposes full
+handover support (NrHelper::AddX2Interface, HandoverRequest(Time,ue,src,targetCellId) —
+the targetCellId overload lets us forge a switch to a wrong/non-existent cell), HO traces
+(HandoverStart/EndOk/EndError), and UE-RRC RLF modelling (RadioLinkFailureCause enum), so the
+attack-injection and RLF/interruption-measurement steps are feasible as planned. No deviation
+beyond the version choice already logged above.
+
+[2026-08-27] STEP 3 DONE — scenario skeleton (ltm-forged-handover.cc)
+Created the system-tier scenario program at
+mtp/ns-3-dev/contrib/nr/examples/ltm-forged-handover.cc and registered it in that
+directory's CMakeLists.txt (base_examples list). Placement decision: kept it inside the nr
+examples tree (not a separate mtp/scenario dir) so it builds with `./ns3 build
+ltm-forged-handover` and runs with `./ns3 run "ltm-forged-handover ..."` using the nr
+module's own build/link setup (libnr + libflow-monitor), which is the least-friction path and
+matches every other nr example; no downside for an attack-model study that lives on top of nr.
+What it implements (skeleton only): urban grid of gNBs at 250 m inter-site distance on an
+as-square-as-possible layout, 4 GHz carrier, single band/CC/BWP, 20 MHz, numerology 1, UMa
+3GPP channel (shadowing off), macro 43 dBm gNBs, EPC + remote host. UEs use a constant-SPEED
+bounded 2D random walk (speed fixed at the configured km/h, direction reflects off the
+deployment bounding box) so they stay in-area and actually cross cell edges — documented in
+the source as the sanctioned "constant-velocity or equivalent" proxy for the skeleton. DL and
+UL UDP flows per UE (remoteHost<->UE) via UdpClient/UdpServer, with UE default routes to the
+EPC gateway for uplink. FlowMonitor installed for later throughput/loss.
+CLI args exposed: --numCells, --numUes, --ueSpeedKmph, --simTime, --rngSeed, --rngRun (plus
+--interSiteDistance, --centralFrequency, --bandwidth, --outputDir, --simTag, --verbose).
+Reproducibility via RngSeedManager::SetSeed/SetRun.
+Build + run verification (real, not just compile): builds clean with `./ns3 build
+ltm-forged-handover` (exit 0, binary ns3.48-ltm-forged-handover-optimized produced). Ran
+`--numCells=4 --numUes=3 --ueSpeedKmph=120 --simTime=3`: executed to completion (exit 0),
+UE RRC ConnectionEstablished traces fired (UEs associated to real cellIds), the periodic
+printer showed UEs moving at the set speed with their nearest-gNB index changing over time
+(e.g. a UE's nearestGnbIdx went 3->1), i.e. UEs genuinely traverse cell edges; 6 DL+UL flows
+carried real traffic (12150 Tx / 7242 Rx pkts, ~16.6 Mbps aggregate). Serving cell stays on
+the initial cell as expected because handover is intentionally NOT yet implemented (Step 4) —
+the changing nearest-gNB while serving-cell is fixed is exactly the cell-edge crossing the
+attack will later exploit. Determinism checked: identical output for repeated --rngRun=1,
+different placement for --rngRun=7.
+No deviation from the plan. Handover logic, RLF tracing, and attacker injection deliberately
+omitted (later steps 4+), as directed.
+
+[2026-08-27] STEP 4 DONE — baseline LTM-style fast MAC-triggered handover + near-zero
+interruption validation (ltm-forged-handover.cc); nr kept PRISTINE (prior patch reverted)
+================================================================================
+WHAT WAS BUILT
+- Mobility fix (carried over from the interrupted prior instance, verified here): UE mobility
+  is a constant-SPEED distance-mode RandomWalk2d (1000 m straight legs, wall bounces) so UEs
+  actually traverse cell edges. At 60/120 km/h over a 250 m-ISD grid this needs ~8-15 s of sim
+  before the first edge crossing (a 60 km/h UE moves only ~33 m in 2 s), which is why short
+  (<=2 s) runs show 0 handovers — expected geometry, not a bug.
+- Fast MAC-triggered handover proxy (boundary B1): a periodic (20 ms) A3-like checker
+  (HandoverCheck) fires NrHelper::HandoverRequest(0 ms, ue, srcGnb, targetCell) when a
+  neighbour is closer than the serving cell by a distance hysteresis, sustained for the 320 ms
+  time-to-trigger. HandoverStart/EndOk/EndError RRC traces are hooked per UE.
+- Interruption is now reported TWO complementary ways (both no-attack baseline):
+    (1) CELL-SWITCH EXECUTION TIME = HandoverEndOk - HandoverStart. Measured = 2.036 ms
+        (deterministic NR HO-procedure latency with 0-delay X2). This is the direct proxy of
+        the intra-BS LTM ~1-2 ms "near-zero" cell-switch budget — the headline Step-4 KPI, and
+        it lands squarely in the spec's target range.
+    (2) DL DATA-PLANE INTERRUPTION = gap between last DL packet delivered before and first
+        after the switch. Baseline ~13-42 ms (seed 1: mean 21.7 / median 13.8 / p95 41.9 ms;
+        seed 2: mean 27.9 / median 17.1 / p95 83.9 ms). Larger than (1) because NR's X2 HO is
+        NOT make-before-break/lossless (in-flight RLC PDUs on the source are dropped; the
+        target re-establishes grants after attach). Documented as a B1-proxy property. Under
+        the forged-switch attack this metric will balloon (RLF + RRC re-establishment ->
+        hundreds of ms) — that is the DoS quantified in later steps; (1) stays ~2 ms or errors.
+  A machine-readable RESULT_BASELINE line now emits hoEvents/hoFail, dp{Mean,Median,P95}Ms,
+  sw{Mean,Median,P95}Ms, and per-direction DL/UL loss% and throughput for the sweep harness.
+
+REAL VERIFICATION RUNS (actual output, not fabricated)
+- `ltm-forged-handover --numCells=4 --numUes=8 --ueSpeedKmph=120 --simTime=10` (defaults):
+    seed/run=1,1: 5 handovers, 0 failures. Traces show real edge crossings, e.g. UE6 hands
+      over twice as it traverses (cell 4->3 at 4.09 s, then 3->1 at 8.91 s). Cell-switch exec
+      2.036 ms; DL data-plane mean 21.7 ms; DL loss 1.97%; DL throughput 20.6 Mbps; exit 0.
+    seed/run=1,2: 8 handovers, 0 failures; cell-switch exec 2.036 ms; DL data-plane mean
+      27.9 ms; DL loss 4.30%; DL throughput 20.1 Mbps; exit 0.
+  Both clean, no crash — this is the SAME config (8 UEs, 120 km/h, hyst=20) that crashed under
+  the prior instance's setup (see next section).
+
+PERFORMANCE INVESTIGATION (brief's priority #1) — it is genuine CPU cost, NOT a hang/loop
+- Characterised wall-clock vs sim-time and scale (optimized build, so NS_LOG is compiled out;
+  ruled out log-spam/retry loops directly — see the nr-patch section, the suspected drop path
+  fires 0 times without handovers):
+    (4 cells, 8 UEs) DL-only: simTime 1 s -> 13.5 s wall; 3 s -> 50.0 s wall => ~18 s wall per
+      simulated second after a ~13 s fixed setup cost. Hence a 10 s run ~ 180 s (matches the
+      >180 s the prior instance saw and killed). So the "hang" was just a slow run, not a loop.
+    DL packet rate is a dominant lever: at (4,8,1 s), dlLambda 100/1000/3000 -> 6.5/12/17 s wall.
+    UE count is super-linear: (4,8,1 s)=13.5 s but (4,24,1 s) did not finish in 120 s (>9x for
+      3x the UEs), and (7 cells, 50 UEs, 1 s) did not finish in ~10 min. Extrapolating to the
+      spec's baseline operating point (12 cells, 150 UEs, 10 s) => order of an hour+ per single
+      seed. Cost is dominated by the 3GPP UMa channel-matrix + beamforming per slot per gNB-UE
+      link and by per-packet PHY processing (both scale with UEs x cells x offered load).
+    (Checked and ruled out as culprits: ChannelConditionModel UpdatePeriod=0 is the CACHED/
+     static-condition fast path, not recompute-every-access; beamforming periodicity is 100 ms,
+     i.e. ~3 m of UE motion per update at 120 km/h — negligible misalignment.)
+- RESOLUTION / IMPLICATION FOR STEP 12: the full-factorial or full-scale-per-point campaign is
+  infeasible as-is. This is flagged now (not deferred silently). Levers to apply at Steps 11-12,
+  with justification, per the spec's explicit permission to reduce seed count if infeasible:
+  (a) the interruption/DoS is a per-VICTIM-bearer metric — model a small number of measured UEs
+  + lighter background load instead of 150 full-traffic UEs; (b) lower dlLambda; (c) reduce
+  seeds and report mean +/- 95% CI; (d) parallelise across the 8 cores; (e) use the low end of
+  the density sweep for the headline point. Concrete seed/scale numbers to be fixed at Step 12
+  from measured per-run wall-clock. Also recorded in PLAN.md deviations log.
+
+nr-spectrum-phy.cc PATCH — RIGOROUSLY INVESTIGATED, then REVERTED (nr now pristine)
+- The prior instance had changed a gNB-side NS_FATAL_ERROR ("gNB transmission overlaps in time
+  with UE transmission") at ~line 1240 into a logged-and-dropped stale RX, claiming it mirrors
+  an existing UE-side tolerance and is a handover-transition artifact.
+- Verified the factual claim FIRST: the UE-side "Stale overlapping transmission detected during
+  handover -> log and return" (StartRxData, TX state, overlapping-RB branch) and the IDLE-state
+  handover misalignment tolerances ARE genuine upstream nr v5.1 code (confirmed via
+  `git show HEAD:model/nr-spectrum-phy.cc`; the working-tree diff touched only the gNB branch).
+  So the "mirror image" claim was TRUE.
+- Verified handover-specificity by instrumenting the patched branch with a countable stderr
+  line: Exp A (handovers DISABLED via hyst=1e9, 4 cells/6 UEs/6 s, heavy traffic, 26% DL loss)
+  produced the gNB-drop path 0 times. So the gNB overlap is NOT hit absent handovers — it is
+  genuinely handover-specific and was not masking a general bug.
+- BUT the patch was BOTH incomplete AND the wrong approach:
+    * Incomplete: with handovers active AND uplink traffic flowing, the run still aborts at a
+      DIFFERENT guard — nr-spectrum-phy.cc:838 "Cannot TX while RX" (UE fires a stale UL grant
+      across the transition). The prior patch never touched this; the config that "worked" for
+      the prior instance only did so by luck of timing on small runs.
+    * Wrong approach: nr's OWN canonical handover test (test/nr-test-x2-handover.cc) documents
+      that "lossless handover at the RLC layer is not implemented" and therefore INTENTIONALLY
+      PAUSES traffic across each handover window rather than patching these half-duplex guards.
+      The guards are deliberate, not bugs.
+- Root cause pinned down empirically on PRISTINE nr: the fatals are triggered specifically by
+  UPLINK transmissions colliding with the DL/RX state during a handover transition. DL-only runs
+  cross handovers with ZERO guard hits and NO patch. Removing UL also dropped DL loss from ~30%
+  to ~2-4% (the heavy UL at cell edges was clogging the TDD scheduler / interfering).
+- DECISION (kept minimal, defensible, nr untouched): reverted the patch (nr is pristine) and
+  instead follow nr's sanctioned pattern at the SCENARIO level — keep DL flowing across the
+  switch (that DL gap is exactly the interruption we measure) and default UL OFF (ulLambda=0,
+  exposed as a CLI arg). Stated as an explicit modelling note in the example header. UL-during-
+  handover (for the spec's UL throughput metric) is deferred to Step 6, to be handled with the
+  same nr-style per-UE traffic pause around dynamic HO instants, so nr stays unmodified.
+
+FILES
+- Modified: contrib/nr/examples/ltm-forged-handover.cc (handover checker, dual interruption
+  metrics, per-direction DL/UL loss+throughput, ambient-gap context stat, ulLambda CLI/default
+  0, machine-readable RESULT line, header modelling notes).
+- Reverted to pristine: contrib/nr/model/nr-spectrum-phy.cc (prior instance's gNB-guard patch
+  removed). Only contrib/nr/examples/{ltm-forged-handover.cc, CMakeLists.txt} differ from stock
+  nr v5.1. Tree builds clean (`./ns3 build ltm-forged-handover`, exit 0).
+
+DEVIATIONS FROM PLAN/SPEC
+- Interruption is reported as BOTH the cell-switch execution time (~2 ms, the LTM-budget proxy
+  and Step-4 target) and the DL data-plane gap (~tens of ms, the fuller outage). The spec's §8
+  "no attack" 1.3 ms corresponds to the control-plane switch; the data-plane figure is larger
+  because the NR X2 proxy is not lossless (boundary B1) — stated openly.
+- Baseline measurement is DL-primary (UL off by default) to keep nr pristine; UL throughput is
+  a Step-6 deliverable. Rationale above.
+- Campaign scale/seed reduction will be required (measured single-run cost documented above);
+  spec explicitly permits this with justification.
+
+[2026-08-27] SCOPE CHANGE — user narrowed the goal
+User instruction: no measurement/statistics/plots/city-scale campaign for now. Goal is now:
+implement the forged LTM cell-switch attack mechanism itself (link-tier probability table +
+attacker injection, i.e. plan Steps 8-9) correctly at SMALL SCALE (a handful of cells/UEs,
+same scenario scale as already built), on top of the already-built Step 5 RLF/re-establishment
+tracing, and demonstrate it working with a few real runs (baseline vs attack-enabled showing
+RLF/re-establishment DoS). Steps 6, 7, and 10-16 (full sweep CLI surface, sweep harness,
+aggregation, plots, large-scale validation) are DEFERRED to a later phase, not part of this
+phase's completion criteria. See PLAN.md "SCOPE CHANGE" section for full detail. Once the
+small-scale attack is verified working, both agents stop and report completion.
+
+[2026-08-28] STEP 5 DONE — RLF/handover-failure tracing + re-establishment outage, and the
+forged-mis-switch attack mechanism (Steps 8-9 core) rewired onto a 3GPP-faithful failure path
+================================================================================
+CONTEXT / WHY THIS TOOK ITERATION
+The Step-5 goal is to make a forged mis-switch DELIBERATELY and RELIABLY produce a
+failure -> RRC re-establishment outage, and to time it. The originally-scaffolded mechanism
+(displace the victim into "coverage loss" so nr's radio-link-monitoring emits out-of-sync
+indications -> N310 -> T310 -> RadioLinkFailure) did NOT fire in this scenario. Systematically
+ruled out as causes (each tested on real runs): RLF timers (N310/N311/T310, incl. 1/1/1000ms),
+ThreeGppChannelConditionModel UpdatePeriod, ThreeGppChannelModel (matrix) UpdatePeriod,
+displacement magnitude (1.5-20 km), and scheduler (default vs round-robin). nr's own
+radio-link-failure test triggers RLF with an identical SetPosition jump, but reproducing it here
+would require porting nr's whole RLF-test scenario config (scheduler, Shannon AMC, noise figures,
+UL power control, fixed-LOS channel), which risks perturbing the validated Step 3/4 results.
+Per the user's directive ("do the option that's more realistic and accurate, based on the thesis
+and 6G 3GPP"), switched to the mechanism that is BOTH more faithful and robust.
+
+MECHANISM ADOPTED — nr's real HANDOVER-FAILURE path (3GPP-emergent, not scripted)
+A forged LTM cell-switch carries a spoofed Target Configuration ID: the UE is commanded to switch
+to a target it cannot actually complete access to. Realised with nr's own handover-failure
+machinery (contrib/nr/test/nr-test-handover-failure.cc): the victim is commanded (via
+NrHelper::HandoverRequest) to a REAL neighbour cell, but that target's RACH preambles are dropped
+for the duration (NrGnbPhy TestDropRachPreambles), so the UE exhausts PreambleTransMax ->
+HandoverFailureMaxRach (a DURING_HANDOVER failure) -> it falls back to RRC re-establishment
+(CONNECTED_PHY_PROBLEM -> IDLE cell search -> reconnect) on a reachable cell. The RACH drop is
+scheduled off 1.5 s later so later legitimate access to that cell is unaffected. This is the
+emergent 3GPP RRC/RACH failure->recovery path, not a hand-scripted timeline. nr is UNMODIFIED
+(model/ tree pristine); everything lives in the example.
+- A HandoverRequest to a NON-EXISTENT cell id was tried first (most literal "spoofed target") but
+  nr null-derefs the missing target gNB -> SIGSEGV, so a real-but-wrong target + RACH-drop is used
+  instead. Documented as a modelling choice.
+
+WHAT WAS BUILT/CHANGED (all in examples/ltm-forged-handover.cc; nr core untouched)
+- RLF/failure trace sinks + RRC state machine bounding of the outage window were already present
+  and are confirmed correct: CONNECTED_PHY_PROBLEM = outage onset, return to CONNECTED_NORMALLY =
+  recovery; per-UE data-plane gap (last good DL -> first restored DL) also measured.
+- Rewrote the Step-5 controlled RLF probe (--rlfProbeUe/--rlfProbeTimeMs): was a handover to the
+  farthest cell (nr completes it successfully -> no failure); now names a real neighbour + drops
+  its RACH -> deterministic handover failure + re-establishment. This validates the outage path.
+- Rewrote the Step-9 attacker landed-forge branch (DoOpportuneSwitch): replaced the non-firing
+  coverage-loss teleport with the same RACH-drop handover-failure mechanism. The forge/miss
+  decision still draws from the §6 P(forge-decode) table (Step 8), unchanged.
+- Added helpers SetRachDropAtCell() and NearestNeighbourCell(); added
+  Config NrGnbMac::PreambleTransMax=3 so RACH failure resolves quickly (normal access still
+  succeeds on attempt 1). Removed now-dead code (coverage-loss teleport, --forgedDisplaceM knob,
+  WorstCellByDistance); build is warning-free.
+
+REAL VERIFICATION (2 gNBs, 1 UE, 1 attacker — the user's small-scale target; actual output)
+- Baseline (attackEnabled=0): no handover failures, no RLF, no outage. Clean.
+- Attack (attackEnabled=1, forced trigger @2 s, margin=8 dB, seed/run 1,1): forge LANDS
+  (u=0.59 < P=0.71); trace shows CONNECTED_NORMALLY -> CONNECTED_HANDOVER ->
+  RLF-CAUSE DURING_HANDOVER -> CONNECTED_PHY_PROBLEM -> IDLE_CELL_SEARCH -> recovered.
+  forgedAttempts=1, forgedLanded=1, handover failures=1, recovered=1.
+  CONTROL-PLANE outage (recovery - onset) = 240.0 ms; DATA-PLANE interruption
+  (last good DL -> first restored DL) = 262.4 ms. Legitimate switch stays ~2.036 ms (Step 4),
+  so a single forged switch inflates the interruption ~120x — the thesis's headline DoS shape
+  (LTM near-zero -> hundreds of ms; thesis model mean ~295 ms).
+- §6 probability table check (forced trigger; measured forge-decode rate vs margin, 20 seeds/pt):
+  margin 0 dB -> 0.50 (table 0.37; n=28, within ~1 sigma), 4 dB -> 0.53 (table 0.54),
+  8 dB -> 0.710 (table 0.71, exact). Monotonic in margin and matches the table at the higher-
+  confidence points -> the attack success is correctly driven by the link-tier table (Step 8) and
+  injection (Step 9).
+
+MODELLING NOTES / DEVIATIONS
+- Failure is realised as a 3GPP HANDOVER FAILURE (too-late/RACH), not a T310 radio-link-monitoring
+  RLF. This is the more faithful model of "mis-switch to a target the UE can't complete access to"
+  (the thesis's spoofed Target Configuration ID) and is emergent from nr's real RRC/RACH state
+  machines. The RESULT_RLF record therefore reports phyProblem/recovered (the failure+recovery)
+  with rlf=0; the outage magnitudes (control-plane, data-plane) are the reported KPIs.
+- The channel-matrix cache (ThreeGppChannelModel::UpdatePeriod=0) from Step 3/4 is kept as-is (the
+  handover-failure mechanism does not depend on it), so Step 3/4 results are unperturbed.
+- Scope reminder: this completes the small-scale attack the user asked for (Steps 5 + 8-9 core at
+  2 gNBs/1 UE/1 attacker). The large-scale sweep/statistics/plots (orig. Steps 10-16) remain
+  deferred per the 2026-08-27 scope change.
+
+[2026-08-28] STEP 8 DONE — link-tier margin -> P(forge-decode) table + interpolation, unit-checked
+================================================================================
+The §6 lookup table (PForgeDecode) was already implemented and in use by the attacker (Step 9)
+and confirmed indirectly in Step 5 (measured forge rate at 8 dB = 0.710 vs table 0.71). Step 8
+adds the explicit UNIT-CHECK the plan calls for, exercising the real function:
+- New CLI flag --printForgeTable: prints PForgeDecode(margin) at the exact tabulated points,
+  interpolated midpoints, and out-of-range margins, then exits (a reusable verification tool).
+- Verified output (`./ns3 run "ltm-forged-handover --printForgeTable"`):
+  * Exact points reproduce THESIS_ATTACK_SPEC §6 exactly: 0->.37 1->.42 2->.46 3->.50 4->.54
+    6->.63 8->.71.
+  * Piecewise-linear interpolation correct (each midpoint = linear mean of its bracketing
+    points): 0.5 dB->.3950, 2.5 dB->.4800, 5.0 dB->.5850, 7.0 dB->.6700.
+  * Clamped outside the tabulated range: -5 dB->.3700, 12 dB->.7100.
+This table is the ONLY place the RF capture effect enters the ns-3 model (modelling boundary B2):
+per attack attempt the attacker draws u~U[0,1) and the forged command "decodes" iff u < P(margin);
+the RF overshadow itself is not simulated. Build is warning-free; nr core still pristine.
+
+[2026-08-28] LTM IMPLEMENTED — real air-interface 6G LTM cell-switch MAC CE in nr core
+================================================================================
+User directive: replace the LTM *proxy* (a direct NrHelper::HandoverRequest call) with a
+genuine 6G LTM Lower-layer-Triggered-Mobility cell switch delivered as an unauthenticated
+Layer-2 MAC Control Element on the real air interface, with the attacker forging it at the PHY.
+Chosen fidelity (user pick): "Full air-interface MAC CE in nr core" (the deepest option).
+nr v5.1 has NO native LTM (nor conditional handover), so this was built from scratch across
+nr's PHY/MAC/RRC. nr core is now MODIFIED (previously pristine) — this is our clone.
+
+WHAT WAS BUILT (nr core, 9 files + example)
+- New control message NrLtmCellSwitchMessage (model/nr-control-messages.{h,cc}) + a new
+  NrControlMessage::LTM_CELL_SWITCH type. Carries unicast RNTI, targetCellId, Target
+  Configuration ID, and a "forged" tracing flag. It is a real DL control-channel message
+  (below PDCP, unauthenticated) — the exact artefact the thesis says is forgeable.
+- gNB emit: NrGnbPhy::SendLtmCellSwitch(rnti,targetCellId,targetConfigId) builds the CE, stamps
+  the source BWP ARFCN, and enqueues it on the DL control channel with EnqueueCtrlMsgNow (no
+  extra latency — the LTM design point). (model/nr-gnb-phy.{h,cc})
+- UE receive/dispatch: NrUePhy::PhyCtrlMessagesReceived gains an LTM_CELL_SWITCH branch that
+  checks the CE addresses this UE's RNTI (unicast) and relays it up via the CPHY SAP.
+  (model/nr-ue-phy.cc)
+- CPHY SAP: new upcall NrUeCphySapUser::RecvLtmCellSwitch(...) + MemberNrUeCphySapUser
+  forwarding to the RRC (model/nr-ue-cphy-sap.h).
+- UE RRC: NrUeRrc::DoRecvLtmCellSwitch(...) acts on the command (the UE cannot authenticate it,
+  so legitimate and forged commands are handled identically — the vulnerability) and fires a new
+  "LtmCellSwitchReceived" trace source (imsi,cellId,rnti,targetCellId,targetConfigId,forged).
+  (model/nr-ue-rrc.{h,cc})
+- Attacker PHY injection: NrUePhy::InjectForgedLtmCellSwitch(targetCellId,targetConfigId) feeds a
+  forged CE straight into the victim UE's DL-control receive path — the capture-effect overshadow.
+  (model/nr-ue-phy.{h,cc})
+- Example rewire (examples/ltm-forged-handover.cc): the A3-like checker now, instead of calling
+  HandoverRequest, EMITS the LTM MAC CE — legitimately via gNB SendLtmCellSwitch to the best
+  cell, or, when the attacker's §6 capture draw lands for a victim, via the victim UE's
+  InjectForgedLtmCellSwitch with a spoofed target. When the UE acts on the CE (LtmCellSwitchReceived
+  trace) the example executes the mechanical switch (LtmExecuteSwitch), reusing nr's tested
+  handover: a legit target completes fast; a forged/spoofed target has its RACH dropped so the
+  handover fails -> RRC re-establishment (the DoS).
+
+BUG FIXED DURING BRING-UP
+- Over-the-air control messages are routed at the UE by their source ARFCN
+  (NrUeNetDevice::RouteIngoingCtrlMsgs aborts on arfcn==0). The legit path crashed (SIGABRT,
+  nr-control-messages.cc:45) until SendLtmCellSwitch/InjectForgedLtmCellSwitch stamp the CE with
+  DoGetArfcn(). Fixed.
+
+REAL VERIFICATION (actual output)
+- LEGIT path (4 cells, 8 UEs, 120 km/h, 10 s, no attack): 5 LTM cell-switches delivered as MAC
+  CEs over the air ("LTM-RX UEx acts on LTM cell-switch MAC CE -> target C (legit)"), 5 handovers,
+  0 failures, cell-switch execution time 2.00 ms (the near-zero LTM budget preserved). No crash.
+- FORGED path (2 cells, 1 UE, 1 attacker, forced @2 s, margin 8 dB): attacker injects a forged
+  LTM MAC CE at the victim PHY ("FORGE-INJ" -> "LTM-RX UE0 ... (FORGED)"); the UE acts on the
+  spoofed target -> DURING_HANDOVER failure -> CONNECTED_PHY_PROBLEM -> cell search ->
+  re-establishment. Control-plane outage 240.0 ms, data-plane 262.4 ms vs the 2 ms legit switch
+  (~120x DoS inflation). forgedAttempts=1, forgedLanded=1, recovered=1.
+- Regression: Step 8 §6 table still exact (0 dB->0.37, 8 dB->0.71).
+
+FIDELITY / BOUNDARIES (honest)
+- The LTM cell-switch is now a REAL unauthenticated MAC CE on the DL air interface, received and
+  acted on through nr's genuine PHY->CPHY-SAP->RRC path; the attack is a REAL PHY-level injection
+  of a forged CE. This is the attack surface the thesis targets.
+- The mechanical cell change (after the CE is acted on) reuses nr's handover EXECUTION; a forged
+  switch fails via nr's RACH/handover-failure machinery (TestDropRachPreambles). Full CHO-style
+  candidate RRC pre-provisioning and RACH-less LTM execution are NOT separately modelled — the
+  candidate set is the real neighbour cells and a forged Target Configuration ID names a target
+  the UE cannot complete. Documented boundary (B1: consequence via NR handover; B2: RF capture
+  enters only as the §6 probability).
+- nr core is no longer pristine: 9 model files changed (control-messages, gnb-phy, ue-phy,
+  ue-cphy-sap, ue-rrc). All changes are additive (new message type/methods/trace); no existing
+  behaviour was altered.
+
+[2026-08-28] ACCURATE LTM — candidate pre-configuration + Target-Config-ID activation (not L3 reconfig)
+================================================================================
+Reviewer (supervisor) critique, grounded in handover_6g.pdf (3GPP Rel-20/21 study): the prior
+build delivered a real MAC-CE trigger but EXECUTED a full L3 X2 handover at switch time -- i.e.
+a MAC-CE-triggered classic handover, not LTM. Real LTM (handover_6g section 15.2 scheme 2 /
+section 9.2): the network pre-configures candidate cells IN ADVANCE, the UE pre-parses them, and
+the cell-switch MAC CE merely ACTIVATES a candidate by its Target Configuration ID -- "execution
+is an activation rather than a reconfiguration."
+
+WHAT WAS CHANGED (nr core + example)
+- NrUeRrc now holds an LTM candidate table m_ltmCandidates (Target Configuration ID -> candidate
+  cell) with a public AddLtmCandidate(configId, cellId). Models the candidate configuration the
+  serving cell delivers in advance over RRC. (model/nr-ue-rrc.h/.cc)
+- NrUeRrc::DoRecvLtmCellSwitch no longer just logs: it LOOKS UP the Target Configuration ID among
+  the pre-configured candidates. A valid id ACTIVATES that candidate; an id with no candidate
+  (exactly what a forged/spoofed Target Configuration ID carries) has nothing valid to activate.
+  The LtmCellSwitchReceived trace gained a validCandidate flag (now 7 args).
+- Example: at setup each UE is pre-configured with a candidate per real cell (configId==cellId)
+  via AddLtmCandidate -- the "config file sent beforehand". The legitimate switch names a valid
+  candidate's config id (activation). The attacker now injects a SPOOFED config id (50000+cell)
+  the victim has NO candidate for -> activation impossible -> the UE attempts an unprepared switch
+  and fails (RACH) -> RRC re-establishment (DoS). This replaces the earlier RACH-drop-as-attack
+  with the faithful "spoofed Target Configuration ID has no valid candidate" mechanism.
+
+REAL VERIFICATION (actual output)
+- Legit (4 cells, no attack): "LTM-RX UEx acts on LTM MAC CE configId=C -> ACTIVATE pre-configured
+  candidate cell C [legit]"; 5 activations, 0 failures, switch-exec 2.00 ms. No crash.
+- Forged (2 cells, forced @2s, 8 dB): "LTM-RX UE0 acts on LTM MAC CE configId=50001 -> NO
+  pre-configured candidate (spoofed) cell 1 [FORGED]" -> DURING_HANDOVER failure -> re-establish;
+  control-plane 240.0 ms, data-plane 262.4 ms. forgedLanded=1, recovered=1.
+
+WHICH OF THE REVIEWER'S THREE POINTS ARE NOW ADDRESSED
+1. Pre-configuration / network prepares in advance: YES -- candidate table pre-configured at the
+   UE. (The AI/predictive-trajectory *decision* is still a geometric A3-like proxy; AI mobility is
+   a separate study-phase 6G ambition, not part of LTM's switch mechanism.)
+2. Network (gNB) issues the MAC CE, UE does not "ask": already correct; unchanged.
+3. MAC CE activates a pre-stored candidate, not a fresh L3 reconfiguration: YES semantically --
+   the config id selects a pre-configured candidate; a spoofed id has none.
+
+REMAINING HONEST GAP (documented boundary)
+- nr has NO RACH-less / early-TA activation path and no native prepare-and-hold of multiple X2
+  candidate contexts. So the MECHANICAL move of a *valid* activation still reuses nr's handover
+  execution (which performs the target-context setup + RACH at switch time); the measured 2.0 ms
+  is nr's fast X2 handover, not a true sub-millisecond RACH-less LTM activation. The LTM
+  ARCHITECTURE (pre-configured candidates + MAC-CE activation by Target Configuration ID +
+  spoofed-id-has-no-candidate) is faithful; the RACH-less execution timing is not. Closing it
+  would require implementing CHO-style prepare-and-hold + RACH-less in nr core (a larger effort).
