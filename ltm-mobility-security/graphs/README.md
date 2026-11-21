@@ -12,6 +12,7 @@ final report text.
 | `atk05_sim.png` | Finding 1: channel-model / simulation harness overview |
 | `atk05a_capture.png`, `atk05a_window.png`, `atk05a_window_simple.png` | Finding 1: relay capture-advantage vs. injected delay, and the PRACH search-window boundary |
 | `atk05_delta_line.png` | Finding 1: decode-failure rate vs. injected TA delay (the measured 6-8 unit boundary) |
+| `winner_plot_0db.png`, `winner_plot_10db.png` | Finding 1: per-trial winner of the correlator contest (relay vs. UE direct path) vs. injected delay, at 0 dB and +10 dB relay power advantage |
 | `atk05b_retrack.png` | Finding 1: srsRAN TA re-tracking behaviour once capture begins |
 | `atk05c_e2e.png` | Finding 1: end-to-end composition result |
 | `atk16_deadlock.png`, `atk16_e2e.png`, `atk16_space.png` | Finding 2: the SR-deadlock mechanism and configuration-space sweep |
