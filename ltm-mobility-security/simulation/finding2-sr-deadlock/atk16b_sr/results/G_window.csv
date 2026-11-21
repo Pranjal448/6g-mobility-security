@@ -1,0 +1,2 @@
+scs_khz,ports,nof_sym,band,win_units,fading,ds_ns,snr_db,err_units,trials,p_sr,mean_metric
+30,1,2,loaded,0,none,0,20,0,500,1,113.901

@@ -1,0 +1,57 @@
+\chapter*{Abbreviations and Conventions}
+\addcontentsline{toc}{chapter}{Abbreviations and Conventions}
+\vspace{-1.0em}
+
+{\singlespacing\scriptsize
+\renewcommand{\arraystretch}{0.92}
+\noindent\textbf{Protocol Entities, Channels, and Timers}
+\vspace{-0.4em}
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l p{4.9cm} X@{}}
+\toprule
+\textbf{Term} & \textbf{Full Form} & \textbf{Description / Role in Report} \\
+\midrule
+\textbf{UE} & User Equipment & 5G mobile terminal. \\
+\textbf{gNB} & Next Generation NodeB & 5G base station, split into CU and DU. \\
+\textbf{CU / DU} & Central / Distributed Unit & Higher/lower protocol stack splits of the gNB. \\
+\textbf{RRC} & Radio Resource Control & Layer-3 control protocol; ciphered and integrity-protected. \\
+\textbf{MAC CE} & MAC Control Element & In-band MAC header control message; currently unauthenticated. \\
+\textbf{LTM} & Lower-Layer Triggered Mobility & Fast cell switch via MAC CE over pre-cached configurations. \\
+\textbf{RACH-less} & RACH-less Execution & LTM switch executed without RACH preamble handshake. \\
+\textbf{TA} & Timing Advance & Uplink transmit lead compensating propagation delay. \\
+\textbf{PRACH} & Physical Random Access Channel & Carries preamble from which gNB derives initial TA. \\
+\textbf{SR} & Scheduling Request & 1-bit uplink control indication on PUCCH requesting an uplink grant. \\
+\textbf{PUCCH} & Physical Uplink Control Channel & Carries SR, HARQ feedback, and CSI; deallocated upon deadlock. \\
+\textbf{SRS} & Sounding Reference Signal & Uplink reference signal used for channel sounding; deallocated upon deadlock. \\
+\textbf{T304} & Handover Supervision Timer & Guards mobility execution; on expiry, UE initiates RRC re-establishment. \\
+\textbf{T310} & Radio Link Failure Timer & Downlink out-of-sync timer; stopped during handover reconfiguration. \\
+\textbf{ZCZ} & \texttt{zero\-Correlation\-Zone\-Config} & Preamble cyclic-shift parameter setting gNB search window width. \\
+\textbf{NCR} & Network-Controlled Repeater & 3GPP Rel-18 amplify-and-forward relay node. \\
+\textbf{F1AP} & F1 Application Protocol & Protocol between gNB-CU and gNB-DU carrying candidate TA values. \\
+\textbf{ASN.1} & Abstract Syntax Notation One & Formal grammar defining 3GPP RRC/MAC information elements. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\vspace{-0.6em}
+\noindent\textbf{Symbols and Physical-Layer Quantities}
+\vspace{-0.4em}
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l p{4.9cm} X@{}}
+\toprule
+\textbf{Symbol} & \textbf{Definition} & \textbf{Value / Role in Analysis} \\
+\midrule
+$T_c$ & Basic 5G time unit & $1/(480\,000 \times 4096)\,\text{s} \approx 0.509$\,ns. \\
+$T_{\mathrm{unit}}$ & Timing advance quantisation unit & $16 \cdot 64 \cdot T_c / 2^{\mu}$ ($520.8$\,ns at $\mu=0$; $260.4$\,ns at $\mu=1$). \\
+$L_{\mathrm{CP}}$ & Cyclic prefix duration & $144 \cdot 64 \cdot T_c / 2^{\mu} = 9\,T_{\mathrm{unit}}$ at all numerologies $\mu$. \\
+$\mu$ & Numerology index & Subcarrier spacing $\Delta f = 15 \times 2^{\mu}$\,kHz ($\mu \in \{0, 1, 2, 3\}$). \\
+$\Delta$ & Relay excess delay & Forwarding delay injected by relay, quantized in $T_{\mathrm{unit}}$. \\
+$\Delta_{\mathrm{th}}$ & Capture threshold & Correlator capture power advantage ($+9.9$\,dB flat, $+5.3$\,dB multipath). \\
+$d, r$ & Propagation distances & Distance from candidate cell to victim UE and relay, respectively. \\
+$K$ & Maximum SR transmissions & Integer parameter \texttt{sr-TransMax} ($K \in \{4, 8, 16, 32, 64\}$). \\
+$T_p, P$ & SR timer and periodicity & \texttt{sr-ProhibitTimer} duration and SR resource periodicity. \\
+BLER / EVM & Reception quality metrics & Block Error Rate and Error Vector Magnitude. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+}

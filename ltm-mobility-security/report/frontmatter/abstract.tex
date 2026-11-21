@@ -1,0 +1,43 @@
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+\vspace{0.2em}
+{\singlespacing
+\noindent
+Lower-Layer Triggered Mobility (LTM), introduced in 3GPP Releases 18 and 19, replaces the slow RRC
+handover with a single MAC Control Element (CE) to minimize mobility interruption for low-latency
+applications. LTM achieves this speed-up by pre-caching candidate cell configurations, acquiring
+candidate timing advances in advance, and executing cell switches without random access (RACH-less).
+While prior work has noted that MAC CEs lack integrity protection, this report investigates the
+architectural vulnerabilities introduced by these three speed-up mechanisms themselves. Two major
+findings are identified through rigorous 3GPP specification analysis, both surviving prospective MAC CE
+integrity protection because neither depends on message forgery.
+
+\textbf{Finding 1} identifies that candidate timing advance acquisition relies on a physical-layer preamble
+measurement bound only to a cell, preamble index, and time occasion---never to a UE identity. Furthermore,
+no specification clause bounds how long the network may retain this measurement. A low-power RF relay
+forwarding the preamble with differential delay can inflate the stored timing advance. Simulated against
+open-source 5G stacks (srsRAN and OpenAirInterface), the measured decodability boundary spans 6--8
+timing advance units (median 7); under flat-fading/AWGN channel conditions this reaches full, deterministic
+uplink decode failure by 8 units, while realistic multipath saturates slightly more gradually across the
+same range. This boundary is invariant across numerologies because the cyclic prefix scales identically
+with the timing advance unit. The relay requires only a $+9.9$\,dB power margin under flat fading
+($+5.3$\,dB under multipath) to succeed in 90\% of trials, placing it within an admissible radius equal
+to or greater than the victim's distance.
+
+\textbf{Finding 2} uncovers a protocol deadlock in the scheduling request (SR) procedure of TS~38.321
+clause~5.4.4. Upon exhausting its retry counter (\texttt{sr-TransMax}), the UE unconditionally deallocates
+its PUCCH, SRS, and all grants at depth \texttt{5>}. However, the recovery action (initiating random
+access) sits at depth \texttt{6>}, gated by a condition that evaluates to false during an ongoing
+RACH-less LTM switch. Across the 5400 legal 3GPP ASN.1 configurations, this deadlock is reachable in up to
+77.4\% of configurations.
+
+The two findings compose into a deterministic attack: when the UE applies the corrupted timing advance
+during a RACH-less LTM switch, its misaligned transmit timing causes complete phase decorrelation on its
+PUCCH Format~0 Scheduling Requests. Every SR attempt fails across all SNRs (a 23\,dB sweep). Counter
+exhaustion occurs with near certainty under flat-fading/AWGN conditions ($P \ge 0.996$ at 7 units of
+error) and remains high under realistic multipath ($P = 0.75$--$0.97$ depending on receive diversity and
+the exact TA error), triggering unconditional resource teardown while recovery is blocked. We derive a
+safe configuration rule ($\texttt{sr-TransMax} \times T_{\text{interval}}
+\ge \texttt{t304}$) that closes the vulnerability, verify both findings against published vendor
+configurations, and establish the Phase~II research roadmap.
+}

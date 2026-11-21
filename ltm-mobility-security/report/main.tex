@@ -1,0 +1,227 @@
+% =====================================================================
+%  M.Tech / Master's Thesis Report Template
+%  Modelled on the IIT Guwahati (CSE) M.Tech project report format.
+%  Compile:  pdflatex main && bibtex main && pdflatex main && pdflatex main
+%  (or simply:  latexmk -pdf main)
+% =====================================================================
+\documentclass[12pt,a4paper,oneside]{report}
+
+% ---------------------------------------------------------------------
+%  1.  THESIS DETAILS  -- edit these fields only
+% ---------------------------------------------------------------------
+\newcommand{\thesistitle}{Security Analysis of\\ Lower-Layer Triggered Mobility\\ in 5G-Advanced and 6G Networks}
+\newcommand{\thesistitleflat}{Security Analysis of Lower-Layer Triggered Mobility in 5G-Advanced and 6G Networks} % single-line, for the certificate
+\newcommand{\degreename}{Master of Technology}
+\newcommand{\reporttype}{M.\ Tech Project Report (Phase I)}   % e.g. M.\ Tech Thesis, MS Thesis
+\newcommand{\authorname}{Pranjal Chouhan}
+\newcommand{\rollno}{254101040}
+\newcommand{\supervisorname}{Prof.\ Moumita Patra}
+\newcommand{\supervisortitle}{Department of Computer Science \& Engineering}
+\newcommand{\departmentname}{Department of Computer Science \& Engineering}
+\newcommand{\departmentcaps}{DEPARTMENT OF COMPUTER SCIENCE AND ENGINEERING}
+\newcommand{\institutecaps}{INDIAN INSTITUTE OF TECHNOLOGY GUWAHATI}
+\newcommand{\institutename}{Indian Institute of Technology Guwahati}
+\newcommand{\institutecity}{GUWAHATI - 781039, ASSAM}
+\newcommand{\submissiondate}{November, 2026}
+\newcommand{\submissionplace}{Guwahati}
+\newcommand{\logofile}{figures/iitg_logo.png}        % put your institute logo here
+
+% ---------------------------------------------------------------------
+%  2.  PACKAGES
+% ---------------------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[a4paper,left=3.0cm,right=2.5cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage{setspace}
+\usepackage{microtype}
+
+% math
+\usepackage{amsmath,amssymb,amsfonts,mathtools}
+
+% graphics, tables, floats
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{etoolbox}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage[font=small,labelfont=bf,labelsep=colon]{caption}
+\captionsetup[figure]{name=Fig.}
+\captionsetup[table]{position=above}
+\usepackage{subcaption}
+
+% code listings
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,
+        numbers=left,numberstyle=\tiny,keywordstyle=\color{blue!70!black},
+        commentstyle=\color{green!40!black},showstringspaces=false}
+
+% headings and page style
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+
+% bibliography: numeric, IEEE style ([1], [2, 3])
+\usepackage[nocompress]{cite}
+% tighter bibliography list
+\apptocmd{\thebibliography}{\setlength{\itemsep}{0pt plus 0.2pt}\setlength{\parsep}{0pt}}{}{}
+
+% links (load late)
+\usepackage[hidelinks]{hyperref}
+\usepackage[nameinlink,capitalise,noabbrev]{cleveref}
+\crefname{figure}{Figure}{Figures}
+
+% ---------------------------------------------------------------------
+%  3.  LOOK AND FEEL & SPACING
+% ---------------------------------------------------------------------
+\onehalfspacing
+\emergencystretch=3em   % let TeX stretch a final pass rather than overrun the margin
+\setlength{\parindent}{1.5em}
+\setlength{\parskip}{0pt}
+
+% Float and caption spacing adjustments
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\setlength{\intextsep}{10pt plus 2pt minus 2pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{5pt}
+\setlength{\belowcaptionskip}{3pt}
+
+% Sans-serif bold headings
+\titleformat{\chapter}[display]
+  {\sffamily\bfseries\Huge}{\chaptertitlename\ \thechapter}{14pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{0pt}{18pt}
+\titleformat{name=\chapter,numberless}[block]
+  {\sffamily\bfseries\Huge\centering}{}{0pt}{}
+\titlespacing*{\chapter}{0pt}{0pt}{18pt}
+\titleformat{\section}{\sffamily\bfseries\Large}{\thesection}{1em}{}
+\titlespacing*{\section}{0pt}{12pt plus 2pt minus 2pt}{6pt plus 1pt minus 1pt}
+\titleformat{\subsection}{\sffamily\bfseries\large}{\thesubsection}{1em}{}
+\titlespacing*{\subsection}{0pt}{9pt plus 2pt minus 2pt}{4pt plus 1pt minus 1pt}
+\titleformat{\subsubsection}{\sffamily\bfseries\normalsize}{\thesubsubsection}{1em}{}
+\titlespacing*{\subsubsection}{0pt}{6pt plus 1pt minus 1pt}{3pt plus 1pt minus 1pt}
+
+% Page numbers centred in the footer, no running header
+\pagestyle{plain}
+\renewcommand{\headrulewidth}{0pt}
+
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{1}
+
+% Convenience macros for the thesis
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\Wrt}{w.r.t.\ }
+\newcommand{\eg}{e.g.,\ }
+\newcommand{\ie}{i.e.,\ }
+\newcommand{\TA}{T$_\mathrm{A}$}
+
+% =====================================================================
+\begin{document}
+
+% ---------------------------------------------------------------------
+%  TITLE PAGE
+% ---------------------------------------------------------------------
+\pagenumbering{roman}
+\begin{titlepage}
+  \centering
+  \vspace*{1.2cm}
+  {\sffamily\bfseries\LARGE \thesistitle \par}
+  \vspace{1.8cm}
+  {\bfseries\itshape An \reporttype\ Submitted\\
+   in Partial Fulfillment of the Requirements\\
+   for the Degree of\par}
+  \vspace{0.6cm}
+  {\bfseries \degreename\par}
+  \vspace{2.2cm}
+  {\itshape by\par}
+  \vspace{0.3cm}
+  {\sffamily\bfseries\large \authorname\par}
+  {\sffamily\large (\rollno)\par}
+  \vspace{0.2cm}
+  {\itshape under the guidance of\par}
+  \vspace{0.3cm}
+  {\bfseries\large \supervisorname\par}
+  \vfill
+  \IfFileExists{logo.jpg}{\includegraphics[height=3.2cm]{logo.jpg}}%
+    {\IfFileExists{\logofile}{\includegraphics[height=3.2cm]{\logofile}}%
+      {\fbox{\parbox[c][2.6cm][c]{3.0cm}{\centering\small Institute logo\\(\texttt{logo.jpg})}}}}
+  \par\vspace{0.6cm}
+
+  {\bfseries to the\par}
+  \vspace{0.2cm}
+  {\bfseries \departmentcaps\par
+   \institutecaps\par
+   \institutecity\par}
+\end{titlepage}
+
+% ---------------------------------------------------------------------
+%  CERTIFICATE
+% ---------------------------------------------------------------------
+\chapter*{CERTIFICATE}
+\vspace{1em}
+\noindent This is to certify that the work contained in this thesis entitled
+``\textbf{\thesistitleflat}'' is a bonafide work of \textbf{\authorname}
+(Roll No.\ \rollno), carried out in the \departmentname, \institutename\ under my
+supervision and that it has not been submitted elsewhere for a degree.
+
+\vspace{3cm}
+\noindent
+{\singlespacing\noindent
+\begin{minipage}[b]{0.35\textwidth}
+  \raggedright
+  \submissiondate\\[0.25cm]
+  \submissionplace.
+\end{minipage}\hfill
+\begin{minipage}[b]{0.60\textwidth}
+  \raggedleft
+  Supervisor: \textbf{\supervisorname}\\[0.35cm]
+  Professor,\\[0.1cm]
+  \departmentname,\\[0.1cm]
+  \institutename, Assam.
+\end{minipage}
+}
+\clearpage
+% ---------------------------------------------------------------------
+%  FRONT MATTER
+% ---------------------------------------------------------------------
+\input{frontmatter/acknowledgements}
+\clearpage
+\input{frontmatter/abstract}
+\clearpage
+
+\tableofcontents
+\clearpage
+\listoffigures
+\addcontentsline{toc}{chapter}{List of Figures}
+\clearpage
+\listoftables
+\addcontentsline{toc}{chapter}{List of Tables}
+\clearpage
+\input{frontmatter/abbreviations}
+
+% ---------------------------------------------------------------------
+%  MAIN MATTER
+% ---------------------------------------------------------------------
+\clearpage
+\pagenumbering{arabic}
+
+\input{chapters/introduction}
+\input{chapters/literature}
+\input{chapters/timing_advance}
+\input{chapters/dead_state}
+\input{chapters/results}
+\input{chapters/conclusion}
+
+% ---------------------------------------------------------------------
+%  BIBLIOGRAPHY
+% ---------------------------------------------------------------------
+\clearpage
+\addcontentsline{toc}{chapter}{References}
+{\footnotesize
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+}
+
+\end{document}

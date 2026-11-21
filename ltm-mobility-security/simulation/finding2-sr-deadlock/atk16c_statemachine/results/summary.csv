@@ -1,0 +1,17 @@
+group,label,p_sr,sr_trans_max,t_interval_ms,t304_ms,rach_lessHO_configured,ongoing_racHless_ltm_switch,n,p_deadlock,p_grant,p_recovered_ra,p_t304_first,crosscheck_table41
+negative_control,"Legacy handover, p_sr=0.028 (as bad as 6-unit attack)",0.028,8,20,10000,False,False,200000,0.0,0.20404,0.79596,0.0,
+negative_control,"Legacy handover, p_sr=0.0 (worse than any attack case)",0.0,8,20,10000,False,False,200000,0.0,0.0,1.0,0.0,
+honest,"Honest, 1 port(s), TA error=0",0.9635,8,20,10000,True,True,200000,0.0,1.0,0.0,0.0,
+honest,"Honest, 2 port(s), TA error=0",0.998,8,20,10000,True,True,200000,0.0,1.0,0.0,0.0,
+honest,"Honest, 4 port(s), TA error=0",1.0,8,20,10000,True,True,200000,0.0,1.0,0.0,0.0,
+attack,"Attack, 1 port(s), TA error=6 units",0.028,8,20,10000,True,True,200000,0.79751,0.20249,0.0,0.0,0.8
+attack,"Attack, 1 port(s), TA error=7 units",0.0005,8,20,10000,True,True,200000,0.99591,0.00409,0.0,0.0,0.996
+attack,"Attack, 1 port(s), TA error=8 units",0.0,8,20,10000,True,True,200000,1.0,0.0,0.0,0.0,
+attack,"Attack, 2 port(s), TA error=6 units",0.432,8,20,10000,True,True,200000,0.011215,0.988785,0.0,0.0,
+attack,"Attack, 2 port(s), TA error=7 units",0.001,8,20,10000,True,True,200000,0.99218,0.00782,0.0,0.0,
+attack,"Attack, 2 port(s), TA error=8 units",0.0,8,20,10000,True,True,200000,1.0,0.0,0.0,0.0,
+attack,"Attack, 4 port(s), TA error=6 units",0.9545,8,20,10000,True,True,200000,0.0,1.0,0.0,0.0,
+attack,"Attack, 4 port(s), TA error=7 units",0.0205,8,20,10000,True,True,200000,0.84781,0.15219,0.0,0.0,
+attack,"Attack, 4 port(s), TA error=8 units",0.0,8,20,10000,True,True,200000,1.0,0.0,0.0,0.0,
+t304_race,"Amarisoft config, full corruption, t304=1000ms",0.0,64,20,1000,True,True,20000,0.0,0.0,0.0,1.0,
+t304_race,"Amarisoft config, full corruption, t304=2000ms",0.0,64,20,2000,True,True,20000,1.0,0.0,0.0,0.0,

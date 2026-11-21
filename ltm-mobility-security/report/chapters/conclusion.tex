@@ -1,0 +1,96 @@
+\chapter{Conclusion, Limitations and Future Work}
+\label{ch:conclusion}
+
+\section{Summary of Contributions}
+
+This report investigated the architectural security of Lower-Layer Triggered Mobility (LTM) in
+5G-Advanced and emerging 6G systems. Rather than focusing on unauthenticated MAC Control Element payloads,
+this research evaluated the vulnerabilities created by LTM's core performance optimizations: pre-cached
+candidate state, unauthenticated asynchronous timing advance acquisition, and RACH-less switching. Two
+fundamental findings were identified through systematic 3GPP specification analysis and validated via
+open-source simulation:
+
+\begin{enumerate}\itemsep3pt
+  \item \textbf{Finding 1 --- Corrupted Early Timing Advance (\cref{ch:m1}):} Early \TA{} acquisition
+        records physical-layer preamble measurements that are bound only to an occasion and preamble
+        index, without binding to a UE identity. Furthermore, 3GPP standards impose no retention limits
+        on this network-cached value. An adversary using a low-power RF relay can forward preambles with
+        excess delay. Measured on srsRAN and OAI, the decodability boundary spans 6--8 units (median 7):
+        deterministic uplink failure under flat-fading/AWGN channel conditions by 8 units, with realistic
+        multipath saturating slightly more gradually across the same range. As derived in
+        \cref{eq:cp9}, this failure boundary is invariant across all 5G and 6G numerologies. The relay
+        requires only a $+9.9$\,dB power advantage under flat fading
+        ($+5.3$\,dB under multipath), operating from any location closer to the candidate cell than the
+        victim.
+  \item \textbf{Finding 2 --- Scheduling Request Deadlock (\cref{ch:m2}):} In TS~38.321 clause~5.4.4,
+        exhaustion of the Scheduling Request counter (\texttt{SR\_COUNTER}) triggers unconditional
+        deallocation of PUCCH, SRS, and all uplink/downlink grants at nesting depth \texttt{5>}. The recovery
+        action (initiating Random Access) sits at depth \texttt{6>}, gated by a condition that evaluates
+        to false during a RACH-less LTM switch. Formal evaluation across all 5400 legal 3GPP configurations
+        shows that this deadlock is reachable in up to 77.4\% of configurations, silencing the UE until
+        supervision timer T304 expires.
+  \item \textbf{Deterministic Vulnerability Trigger:} Finding~1's corrupted \TA{} is what feeds Finding~2's
+        deadlock: the same misalignment that fails the uplink transport block also decorrelates the PUCCH
+        Format~0 Scheduling Request (\cref{ch:m2}), driving counter exhaustion with near certainty under
+        flat fading and with high probability under multipath. The one escape clause~5.4.4 leaves
+        open---a network-issued dynamic grant---does not save the UE, because the same corrupted \TA{}
+        that caused the failure makes that grant undecodable too (\cref{sec:m2dyngrant}).
+  \item \textbf{Safe Configuration Rule:} We derived the closed-form configuration rule
+        $\texttt{sr-TransMax} \times T_{\text{interval}} \ge \texttt{t304}$ that ensures T304 expires
+        prior to counter exhaustion, avoiding deadlock at the expense of increased scheduling latency.
+\end{enumerate}
+
+\section{Limitations of the Study}
+\label{sec:limits}
+
+The theoretical and specification-level findings in this report rest on normative 3GPP specifications
+checked clause-by-clause. Several experimental limitations apply to the current phase of work:
+\begin{enumerate}\itemsep2pt
+  \item \textbf{Simulation-Based Evaluation:} Results are established using open-source protocol stacks
+        (srsRAN, OpenAirInterface) and channel emulation models (3GPP TR~38.901). Live over-the-air
+        testing on commercial hardware or custom RF relay prototypes was not performed in this phase.
+  \item \textbf{Decoupled Stage Modeling:} Physical-layer preamble capture, transport block decodability,
+        and Scheduling Request deadlock were evaluated using independent, targeted simulations across
+        open-source stacks (srsRAN and OAI). A fully integrated, live multi-node cellular testbed running
+        the relay, candidate gNB-DU, and UE MAC stack end-to-end remains an objective for Phase~II.
+  \item \textbf{Channel and Receiver Assumptions:} Uplink baseline evaluations utilized single-antenna
+        data reception and slot-static channel conditions, although receive diversity was fully swept for
+        the control channel.
+  \item \textbf{Receiver-Implementation Sensitivity:} The 6--8 unit decodability boundary is measured
+        against srsRAN's and OpenAirInterface's specific receiver implementations (channel estimation,
+        equalization, and tracking-loop design). Prior work on serving-cell TA manipulation against
+        commercial UEs reports a substantially larger RLF-triggering error of 20--60 units
+        (\cref{sec:lit-ta}), though that work measures a different failure mode (sustained downlink
+        out-of-sync counting) against a different target (the active serving-cell link, under closed-loop
+        tracking) than the one-shot coded-BLER cliff measured here against a freshly-acquired candidate
+        \TA{}. Whether a production gNB's receiver chain would shift this report's specific 6--8 unit
+        boundary is not established in this phase and is left open for further study.
+  \item \textbf{Deployment Verification Scope:} Commercial verification was performed against published
+        configuration dumps from one vendor (Amarisoft Callbox); wider multi-operator configuration surveys
+        remain open.
+\end{enumerate}
+
+\section{Future Work}
+\label{sec:future}
+
+Phase II will focus on researching and evaluating, through further specification analysis and simulation,
+defense mechanisms against the vulnerabilities identified in this phase. The urgency of this work only
+grows with 6G numerologies: by \cref{eq:cp9}, the 7-unit failure boundary scales with $T_{\mathrm{unit}}$
+and is invariant across subcarrier spacings as an algebraic property of 3GPP's own definitions of
+$T_{\mathrm{unit}}$ and $\Delta f$. In upper mid-band (7--24\,GHz) and sub-THz 6G bands, $T_{\mathrm{unit}}$
+shrinks from 260\,ns down to 65\,ns ($\mu=3$), compressing the absolute physical time budget available to
+absorb a corrupted \TA{} from $1.82\,\mu\text{s}$ to $0.46\,\mu\text{s}$---so any remediation studied now
+should be re-examined against that narrower margin for 6G.
+
+\begin{enumerate}\itemsep3pt
+  \item \textbf{Protocol \& Specification Hardening:} Refine the TS~38.321 clause~5.4.4 remediation already
+        derived in this phase from the clause~5.2 CLTM precedent (\cref{sec:m2gap})---re-aligning resource
+        deallocation with recovery actions so that a UE undergoing RACH-less switching retains a fallback to
+        Random Access upon counter exhaustion---and examine analogous hardening of the early \TA{} acquisition
+        and retention path (\cref{sec:m1retention}) at the specification level.
+  \item \textbf{Defensive Telemetry \& Verification:} Study, through specification analysis and simulation,
+        network-side defenses that bound and cross-check early timing advance measurements before they are
+        applied (including retention limits on cached candidate state and cross-layer consistency checks),
+        and physical-layer detection approaches for the multi-path delay and power-delay anomalies
+        characteristic of RF relay forwarding.
+\end{enumerate}

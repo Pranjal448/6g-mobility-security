@@ -1,0 +1,27 @@
+group,label,rel_db,delta_units,n,p_captured,p_decode_fail_e2e,p_decode_fail_cond_captured,p_deadlock_e2e
+negative_control,"No relay, delta=0, rel_db=+15 (irrelevant, no delay induced)",15,0,200000,0.96363,0.020505,0.02127891410603655,0.0
+negative_control,"Weak relay rel_db=-12, delta=4 (below decode-fail threshold)",-12,4,200000,0.062275,0.019075,0.3063026896828583,0.0
+attack,"Attack, delta=7 units, rel_db=-6 dB",-6,7,200000,0.195075,0.210355,1.078328847879021,0.192445
+attack,"Attack, delta=7 units, rel_db=+0 dB",0,7,200000,0.48544,0.49109,1.0116389255108766,0.47824
+attack,"Attack, delta=7 units, rel_db=+3 dB",3,7,200000,0.64912,0.64915,1.000046216416071,0.639815
+attack,"Attack, delta=7 units, rel_db=+6 dB",6,7,200000,0.78456,0.780815,0.9952266238401142,0.77358
+attack,"Attack, delta=7 units, rel_db=+9 dB",9,7,200000,0.879125,0.8725,0.9924640978245415,0.866655
+attack,"Attack, delta=7 units, rel_db=+10 dB",10,7,200000,0.902535,0.895265,0.9919449107236838,0.889805
+attack,"Attack, delta=7 units, rel_db=+12 dB",12,7,200000,0.93141,0.923055,0.9910297291203659,0.917775
+attack,"Attack, delta=7 units, rel_db=+15 dB",15,7,200000,0.963155,0.95385,0.9903390420025853,0.949195
+attack,"Attack, delta=16 units, rel_db=-6 dB",-6,16,200000,0.19355,0.210055,1.0852751227073107,0.19355
+attack,"Attack, delta=16 units, rel_db=+0 dB",0,16,200000,0.487605,0.498445,1.0222311091969936,0.487605
+attack,"Attack, delta=16 units, rel_db=+3 dB",3,16,200000,0.648375,0.655455,1.0109196067090804,0.648375
+attack,"Attack, delta=16 units, rel_db=+6 dB",6,16,200000,0.784555,0.78893,1.00557640955701,0.784555
+attack,"Attack, delta=16 units, rel_db=+9 dB",9,16,200000,0.879065,0.88167,1.0029633758595782,0.879065
+attack,"Attack, delta=16 units, rel_db=+10 dB",10,16,200000,0.90223,0.90426,1.0022499806036156,0.90223
+attack,"Attack, delta=16 units, rel_db=+12 dB",12,16,200000,0.93211,0.93359,1.0015877954318697,0.93211
+attack,"Attack, delta=16 units, rel_db=+15 dB",15,16,200000,0.96402,0.964785,1.0007935520009958,0.96402
+attack,"Attack, delta=32 units, rel_db=-6 dB",-6,32,200000,0.19314,0.20963,1.0853784819302061,0.19314
+attack,"Attack, delta=32 units, rel_db=+0 dB",0,32,200000,0.4867,0.497155,1.0214814053831929,0.4867
+attack,"Attack, delta=32 units, rel_db=+3 dB",3,32,200000,0.649195,0.656355,1.0110290436617657,0.649195
+attack,"Attack, delta=32 units, rel_db=+6 dB",6,32,200000,0.786195,0.790585,1.005583856422389,0.786195
+attack,"Attack, delta=32 units, rel_db=+9 dB",9,32,200000,0.879485,0.88198,1.00283688749666,0.879485
+attack,"Attack, delta=32 units, rel_db=+10 dB",10,32,200000,0.902615,0.904605,1.0022047052176177,0.902615
+attack,"Attack, delta=32 units, rel_db=+12 dB",12,32,200000,0.931475,0.932845,1.001470785582007,0.931475
+attack,"Attack, delta=32 units, rel_db=+15 dB",15,32,200000,0.963615,0.9643,1.0007108648163425,0.963615

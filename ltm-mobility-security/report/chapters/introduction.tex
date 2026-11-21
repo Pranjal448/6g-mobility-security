@@ -1,0 +1,84 @@
+\chapter{Introduction}
+\label{ch:intro}
+
+\section{Motivation}
+
+Mobile cellular networks must seamlessly migrate active User Equipment (UE) connections between base
+stations (gNBs) without data interruption. In legacy 5G networks, handover is governed by a layer-3
+Radio Resource Control (RRC) reconfiguration exchange~\cite{3gpp38300}. During this procedure, the UE
+applies target configurations, releases source connectivity, and executes a contention-free Random
+Access Channel (RACH) handshake on the target cell to acquire uplink timing. This process introduces
+tens of milliseconds of radio interruption. While acceptable for legacy streaming, such latencies
+violate the strict sub-10\,ms deadlines required by mission-critical 5G-Advanced and 6G applications,
+such as extended reality (XR), vehicle-to-everything (V2X), and industrial automation.
+
+\section{The Lower-Layer Triggered Mobility (LTM) Architecture}
+
+To eliminate this handover delay, 3GPP Releases~18 and 19 introduced Lower-Layer Triggered
+Mobility (LTM). LTM replaces the slow RRC exchange with a single layer-2 MAC Control Element (CE), the
+LTM Cell Switch Command~\cite{3gpp38321}. This speed-up relies on three key mechanisms:
+\begin{itemize}\itemsep2pt
+  \item \textbf{Pre-cached candidate configurations:} The network provisions full configurations for
+        up to eight candidate cells in advance via RRC. The switch command contains only a 3-bit index
+        identifying the selected target cell.
+  \item \textbf{Early timing advance acquisition:} The serving cell orders the UE to transmit a PRACH
+        preamble to candidate cells before any handover. The candidate measures the preamble,
+        derives a candidate Timing Advance (\TA{}), and sends it to the serving cell via F1AP to be
+        cached.
+  \item \textbf{RACH-less cell switch:} When the switch command contains this pre-acquired \TA{}, the
+        UE applies it immediately and skips the RACH handshake entirely upon arrival at the target cell.
+\end{itemize}
+LTM is already undergoing deployment in commercial networks; field trials by KDDI and AT\&T have
+demonstrated up to a 25\% reduction in mobility interruption~\cite{ericsson2025ltmreview,ericsson2026kddi,ericsson2026att}.
+
+\section{Problem Statement and Research Gap}
+
+While MAC CEs are known to lack cryptographic integrity protection (studied in 3GPP TR
+33.801-01~\cite{3gpp33801} and \cite{hatinen2026overshadowing}), this report investigates a more
+fundamental architectural question: what security and availability vulnerabilities are created
+by the LTM architectural speed-ups themselves, independent of message forgery?
+
+Vulnerabilities that require message forgery will become obsolete once 3GPP mandates MAC CE integrity
+protection. In contrast, weaknesses stemming from unauthenticated cached state and disabled recovery
+mechanisms survive any cryptographic hardening. Because LTM forms the architectural foundation for
+6G mobility (whose Release~21 Stage-1 requirements begin freezing in 2027~\cite{3gpp2026rel21}, with
+Stage-2/3 work continuing beyond), identifying these protocol flaws is of critical importance.
+
+\section{The Two Findings and Methodological Approach}
+
+By conducting a systematic, line-by-line audit of 3GPP Technical Specifications, this report uncovers
+two major architectural flaws:
+\begin{itemize}\itemsep2pt
+  \item \textbf{Finding 1 --- Corrupted Early Timing Advance (\cref{ch:m1}):} Candidate \TA{} acquisition
+        binds measurements only to a preamble index, occasion, and cell ID---never to a UE identity.
+        Furthermore, 3GPP specifications impose no retention or expiration bounds on this network-held
+        value. An adversary using an RF relay can forward the preamble with excess propagation delay,
+        inflating the stored \TA{}. Using srsRAN and OpenAirInterface, we demonstrate that a timing error
+        of 6--8 units (median 7) crosses the measured decodability boundary---deterministic under flat
+        fading/AWGN, slightly more gradual under multipath---and that the relay requires only a
+        $+9.9$\,dB power margin under flat fading ($+5.3$\,dB under multipath) to succeed.
+  \item \textbf{Finding 2 --- Scheduling Request Deadlock (\cref{ch:m2}):} When a UE arrives via a
+        RACH-less switch without a grant, it must issue Scheduling Requests (SR) on PUCCH. If these fail,
+        TS~38.321 clause~5.4.4 deallocates PUCCH, SRS, and all grants unconditionally upon counter
+        exhaustion. However, the subsequent instruction to recover via random access is gated by a guard
+        condition that evaluates to false during an ongoing RACH-less switch. The UE is left completely
+        silenced, unable to transmit or request resources.
+\end{itemize}
+
+\paragraph{The Unified Attack Composition:} Crucially, Finding~1 directly triggers Finding~2. When the
+UE applies the corrupted \TA{} during a RACH-less switch, its uplink transmissions are misaligned by
+6--8 units or more. Consequently, its PUCCH Format~0 Scheduling Requests cannot be decoded by the target
+gNB. The SR counter exhausts with near certainty under flat fading ($P \ge 0.996$) and remains high under
+multipath ($P = 0.75$--$0.97$), driving the UE into the deadlock state. Because the
+deadlock blocks random access, the UE cannot re-estimate its timing on its own initiative, and a
+network-issued grant fares no better since it inherits the same corrupted \TA{}---so the failure holds
+until the supervision timer T304 expires.
+
+\section{Organisation of the Report}
+
+The remainder of this report is organized as follows: \Cref{ch:lit} reviews 5G protocol foundations, LTM
+mechanics, and related literature. \Cref{ch:m1} presents Finding~1, detailing the early \TA{} vulnerability,
+relay feasibility, and decodability limits. \Cref{ch:m2} presents Finding~2, formalizing the TS~38.321
+scheduling request deadlock and the composite attack. \Cref{ch:results} provides experimental simulation
+results, configuration sweeps, and evaluation of existing defenses. \Cref{ch:conclusion} concludes and
+outlines the Phase~II research roadmap.
